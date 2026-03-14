@@ -16,6 +16,29 @@ import 'screens/settings_screen.dart';
 class EmbyMvpApp extends StatelessWidget {
   const EmbyMvpApp({super.key});
 
+  CustomTransitionPage<T> _transitionPage<T>({
+    required GoRouterState state,
+    required Widget child,
+  }) {
+    return CustomTransitionPage<T>(
+      key: state.pageKey,
+      transitionDuration: const Duration(milliseconds: 320),
+      reverseTransitionDuration: const Duration(milliseconds: 260),
+      child: child,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final curve = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+        final offsetTween = Tween<Offset>(begin: const Offset(0.08, 0), end: Offset.zero);
+        return FadeTransition(
+          opacity: curve,
+          child: SlideTransition(
+            position: offsetTween.animate(curve),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
   ThemeData _buildTheme(Brightness brightness) {
     final base = ThemeData(
       colorSchemeSeed: Colors.blue,
@@ -73,47 +96,51 @@ class EmbyMvpApp extends StatelessWidget {
       routes: [
         GoRoute(
           path: '/login',
-          builder: (_, state) => const LoginScreen(),
+          pageBuilder: (_, state) => _transitionPage(state: state, child: const LoginScreen()),
         ),
         ShellRoute(
           builder: (context, state, child) => MainShellScreen(child: child),
           routes: [
             GoRoute(
               path: '/library',
-              builder: (_, state) => const MediaListScreen(),
+              pageBuilder: (_, state) => _transitionPage(state: state, child: const MediaListScreen()),
             ),
             GoRoute(
               path: '/me',
-              builder: (_, state) => const ProfileScreen(),
+              pageBuilder: (_, state) => _transitionPage(state: state, child: const ProfileScreen()),
+            ),
+            GoRoute(
+              path: '/comics',
+              pageBuilder: (_, state) => _transitionPage(state: state, child: const PlaceholderScreen(title: '漫画')),
             ),
           ],
         ),
         GoRoute(
           path: '/media/:id',
-          builder: (_, state) {
+          pageBuilder: (_, state) {
             final id = int.parse(state.pathParameters['id']!);
-            return MediaDetailScreen(mediaId: id);
+            return _transitionPage(state: state, child: MediaDetailScreen(mediaId: id));
           },
         ),
         GoRoute(
           path: '/player/:id',
-          builder: (_, state) {
+          pageBuilder: (_, state) {
             final id = int.parse(state.pathParameters['id']!);
             final title = state.uri.queryParameters['title'] ?? '播放器';
-            return PlayerScreen(mediaId: id, title: title);
+            return _transitionPage(state: state, child: PlayerScreen(mediaId: id, title: title));
           },
         ),
         GoRoute(
           path: '/me/favorites',
-          builder: (_, state) => const PlaceholderScreen(title: '我的收藏'),
+          pageBuilder: (_, state) => _transitionPage(state: state, child: const PlaceholderScreen(title: '我的收藏')),
         ),
         GoRoute(
           path: '/me/history',
-          builder: (_, state) => const PlaceholderScreen(title: '历史记录'),
+          pageBuilder: (_, state) => _transitionPage(state: state, child: const PlaceholderScreen(title: '历史记录')),
         ),
         GoRoute(
           path: '/me/settings',
-          builder: (_, state) => const SettingsScreen(),
+          pageBuilder: (_, state) => _transitionPage(state: state, child: const SettingsScreen()),
         ),
       ],
     );

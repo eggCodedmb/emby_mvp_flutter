@@ -19,30 +19,77 @@ class MediaListScreen extends StatefulWidget {
 }
 
 class _MediaListScreenState extends State<MediaListScreen> {
+  final ScrollController _scrollController = ScrollController();
+
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
   String? _error;
   List<MediaItem> _items = [];
+  int _currentPage = 1;
+  static const int _pageSize = 20;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _scrollController.addListener(_onScroll);
+    _loadInitial();
   }
 
-  Future<void> _load() async {
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _loadingMore || !_hasMore) return;
+    final pos = _scrollController.position;
+    if (pos.pixels > pos.maxScrollExtent - 260) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadInitial() async {
     setState(() {
       _loading = true;
       _error = null;
+      _currentPage = 1;
+      _hasMore = true;
     });
     try {
-      final page = await MediaService.list();
+      final page = await MediaService.list(page: 1, size: _pageSize);
       if (!mounted) return;
-      setState(() => _items = page.records);
+      setState(() {
+        _items = page.records;
+        _currentPage = 1;
+        _hasMore = _items.length < page.total;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    setState(() => _loadingMore = true);
+    try {
+      final nextPage = _currentPage + 1;
+      final page = await MediaService.list(page: nextPage, size: _pageSize);
+      if (!mounted) return;
+      setState(() {
+        _items.addAll(page.records);
+        _currentPage = nextPage;
+        _hasMore = _items.length < page.total && page.records.isNotEmpty;
+      });
+    } catch (_) {
+      // 滚动加载失败先静默，避免频繁打断
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -60,7 +107,7 @@ class _MediaListScreenState extends State<MediaListScreen> {
           ),
         ),
         actions: [
-          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          IconButton(onPressed: _loadInitial, icon: const Icon(Icons.refresh)),
         ],
       ),
       body: _loading
@@ -71,6 +118,7 @@ class _MediaListScreenState extends State<MediaListScreen> {
                   builder: (context, constraints) {
                     final crossAxisCount = max(2, (constraints.maxWidth / 190).floor());
                     return GridView.builder(
+                      controller: _scrollController,
                       padding: const EdgeInsets.all(12),
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: crossAxisCount,
@@ -78,8 +126,21 @@ class _MediaListScreenState extends State<MediaListScreen> {
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
                       ),
-                      itemCount: _items.length,
+                      itemCount: _items.length + (_loadingMore ? 1 : 0),
                       itemBuilder: (_, i) {
+                        if (i >= _items.length) {
+                          return const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(),
+                                SizedBox(height: 8),
+                                Text('加载中...', style: TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                          );
+                        }
+
                         final m = _items[i];
                         final duration = Duration(seconds: m.durationSec);
                         final hh = duration.inHours;

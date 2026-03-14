@@ -11,7 +11,11 @@ class MainShellScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).uri.path;
-    final currentIndex = location.startsWith('/me') ? 1 : 0;
+    final currentIndex = location.startsWith('/me')
+        ? 1
+        : location.startsWith('/comics')
+            ? 2
+            : 0;
 
     return Scaffold(
       body: child,
@@ -44,6 +48,15 @@ class MainShellScreen extends StatelessWidget {
                       normalAsset: 'assets/NavigationBar/nav_profile.png',
                       activeAsset: 'assets/NavigationBar/nav_profile_active.png',
                       onTap: () => context.go('/me'),
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavIconItem(
+                      label: '漫画',
+                      selected: currentIndex == 2,
+                      icon: Icons.auto_stories_outlined,
+                      selectedIcon: Icons.auto_stories,
+                      onTap: () => context.go('/comics'),
                     ),
                   ),
                 ],
@@ -84,6 +97,51 @@ class _NavItem extends StatelessWidget {
               width: 24,
               height: 24,
               child: Image.asset(selected ? activeAsset : normalAsset),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: selected ? const Color(0xFF60A5FA) : Colors.white70,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NavIconItem extends StatelessWidget {
+  const _NavIconItem({
+    required this.label,
+    required this.selected,
+    required this.icon,
+    required this.selectedIcon,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final IconData icon;
+  final IconData selectedIcon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              selected ? selectedIcon : icon,
+              size: 24,
+              color: selected ? const Color(0xFF60A5FA) : Colors.white70,
             ),
             const SizedBox(height: 2),
             Text(
