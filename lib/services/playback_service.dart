@@ -13,5 +13,12 @@ class PlaybackService {
   }
 
   static String streamUrl(int mediaId) => '${apiClient.baseUrl}/api/media/$mediaId/stream';
+
   static String posterUrl(int mediaId) => '${apiClient.baseUrl}/api/media/$mediaId/poster';
+
+  static String subtitleUrl(int mediaId, {required String lang, String? title}) {
+    final q = <String, String>{'lang': lang, if (title?.isNotEmpty == true) 'title': title!};
+    final uri = Uri.parse('${apiClient.baseUrl}/api/media/$mediaId/subtitle').replace(queryParameters: q);
+    return uri.toString();
+  }
 }

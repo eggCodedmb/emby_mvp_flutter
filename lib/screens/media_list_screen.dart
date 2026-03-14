@@ -84,7 +84,7 @@ class _MediaListScreenState extends State<MediaListScreen> {
 
                         return InkWell(
                           borderRadius: BorderRadius.circular(14),
-                          onTap: () => context.push('/media/${m.id}'),
+                          onTap: () => context.push('/player/${m.id}?title=${Uri.encodeComponent(m.title)}'),
                           child: Card(
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             clipBehavior: Clip.antiAlias,
