@@ -1,6 +1,13 @@
 import '../core/api_client.dart';
 
 class AuthService {
+  static Future<void> register({required String username, required String password}) async {
+    await apiClient.post('/api/auth/register', body: {
+      'username': username,
+      'password': password,
+    });
+  }
+
   static Future<String> login({required String username, required String password}) async {
     final data = await apiClient.post('/api/auth/login', body: {
       'username': username,

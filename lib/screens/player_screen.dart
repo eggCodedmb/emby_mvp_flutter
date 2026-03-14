@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
@@ -256,6 +257,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           onJumpBySeconds: _jumpBySeconds,
           onTogglePlayPause: _togglePlayPause,
           onLongPressFastForward: _setLongPressFastForward,
+          onSubtitlePressed: _showSubtitleMenu,
         ),
       ),
     );
@@ -428,28 +430,58 @@ class _NativeOverlayControlsState extends State<_NativeOverlayControls> {
                               max: durationMs <= 0 ? 1 : durationMs,
                               onChanged: (v) => vc.seekTo(Duration(milliseconds: v.toInt())),
                             ),
-                            Row(
-                              children: [
-                                IconButton(
-                                  onPressed: () => value.isPlaying ? vc.pause() : vc.play(),
-                                  icon: Icon(value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
-                                ),
-                                Text('${_fmt(value.position)} / ${_fmt(value.duration)}', style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                const Spacer(),
-                                const Icon(Icons.volume_up, color: Colors.white70, size: 18),
-                                SizedBox(
-                                  width: 90,
-                                  child: Slider(
-                                    value: value.volume,
-                                    min: 0,
-                                    max: 1,
-                                    onChanged: (v) => vc.setVolume(v),
-                                  ),
-                                ),
-                                IconButton(onPressed: widget.onSubtitlePressed, icon: const Icon(Icons.subtitles, color: Colors.white)),
-                                IconButton(onPressed: widget.onAudioTrackPressed, icon: const Icon(Icons.audiotrack, color: Colors.white)),
-                                IconButton(onPressed: widget.onFullscreenPressed, icon: const Icon(Icons.fullscreen, color: Colors.white)),
-                              ],
+                            LayoutBuilder(
+                              builder: (context, box) {
+                                final compact = box.maxWidth < 430;
+                                final iconSize = compact ? 18.0 : 22.0;
+                                final iconPadding = compact ? 2.0 : 6.0;
+                                final volumeWidth = compact ? 54.0 : 80.0;
+
+                                return Row(
+                                  children: [
+                                    IconButton(
+                                      onPressed: () => value.isPlaying ? vc.pause() : vc.play(),
+                                      icon: Icon(value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                                      iconSize: iconSize,
+                                      padding: EdgeInsets.all(iconPadding),
+                                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        '${_fmt(value.position)} / ${_fmt(value.duration)}',
+                                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.volume_up, color: Colors.white70, size: 16),
+                                    SizedBox(
+                                      width: volumeWidth,
+                                      child: Slider(
+                                        value: value.volume,
+                                        min: 0,
+                                        max: 1,
+                                        onChanged: (v) => vc.setVolume(v),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      onPressed: widget.onSubtitlePressed,
+                                      icon: const Icon(Icons.subtitles, color: Colors.white),
+                                      iconSize: iconSize,
+                                      padding: EdgeInsets.all(iconPadding),
+                                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                    ),
+                                    IconButton(
+                                      onPressed: widget.onFullscreenPressed,
+                                      icon: const Icon(Icons.fullscreen, color: Colors.white),
+                                      iconSize: iconSize,
+                                      padding: EdgeInsets.all(iconPadding),
+                                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           ],
                         ),
@@ -466,13 +498,14 @@ class _NativeOverlayControlsState extends State<_NativeOverlayControls> {
   }
 }
 
-class _FullscreenPlayerPage extends StatelessWidget {
+class _FullscreenPlayerPage extends StatefulWidget {
   const _FullscreenPlayerPage({
     required this.title,
     required this.controller,
     required this.onJumpBySeconds,
     required this.onTogglePlayPause,
     required this.onLongPressFastForward,
+    required this.onSubtitlePressed,
   });
 
   final String title;
@@ -480,56 +513,201 @@ class _FullscreenPlayerPage extends StatelessWidget {
   final Future<void> Function(int seconds) onJumpBySeconds;
   final VoidCallback onTogglePlayPause;
   final void Function(bool enable) onLongPressFastForward;
+  final VoidCallback onSubtitlePressed;
+
+  @override
+  State<_FullscreenPlayerPage> createState() => _FullscreenPlayerPageState();
+}
+
+class _FullscreenPlayerPageState extends State<_FullscreenPlayerPage> {
+  bool _controlsVisible = true;
+  Timer? _hideTimer;
+
+  String _fmt(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    _scheduleAutoHide();
+  }
+
+  void _scheduleAutoHide() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _controlsVisible = false);
+    });
+  }
+
+  void _toggleControls() {
+    setState(() => _controlsVisible = !_controlsVisible);
+    if (_controlsVisible) _scheduleAutoHide();
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                onDoubleTap: onTogglePlayPause,
-                onLongPressStart: (_) => onLongPressFastForward(true),
-                onLongPressEnd: (_) => onLongPressFastForward(false),
-                onHorizontalDragEnd: (details) {
-                  final vx = details.primaryVelocity ?? 0;
-                  if (vx > 150) onJumpBySeconds(10);
-                  if (vx < -150) onJumpBySeconds(-10);
-                },
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: controller.value.aspectRatio,
-                    child: VideoPlayer(controller),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _toggleControls,
+              onDoubleTap: widget.onTogglePlayPause,
+              onLongPressStart: (_) => widget.onLongPressFastForward(true),
+              onLongPressEnd: (_) => widget.onLongPressFastForward(false),
+              onHorizontalDragEnd: (details) {
+                final vx = details.primaryVelocity ?? 0;
+                if (vx > 150) widget.onJumpBySeconds(10);
+                if (vx < -150) widget.onJumpBySeconds(-10);
+              },
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: widget.controller.value.aspectRatio,
+                  child: VideoPlayer(widget.controller),
+                ),
+              ),
+            ),
+          ),
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 160),
+            opacity: _controlsVisible ? 1 : 0,
+            child: IgnorePointer(
+              ignoring: !_controlsVisible,
+              child: Stack(
+                children: [
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    ),
                   ),
-                ),
+                  Positioned(
+                    top: 10,
+                    left: 56,
+                    right: 56,
+                    child: Center(
+                      child: Text(
+                        widget.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 2,
+                    left: 8,
+                    right: 8,
+                    child: ValueListenableBuilder<VideoPlayerValue>(
+                      valueListenable: widget.controller,
+                      builder: (context, value, _) {
+                        final durationMs = value.duration.inMilliseconds.toDouble();
+                        final positionMs = value.position.inMilliseconds
+                            .toDouble()
+                            .clamp(0.0, durationMs <= 0 ? 1.0 : durationMs)
+                            .toDouble();
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Slider(
+                                value: durationMs <= 0 ? 0 : positionMs,
+                                min: 0,
+                                max: durationMs <= 0 ? 1 : durationMs,
+                                onChanged: (v) => widget.controller.seekTo(Duration(milliseconds: v.toInt())),
+                              ),
+                              LayoutBuilder(
+                                builder: (context, box) {
+                                  final compact = box.maxWidth < 700;
+                                  final iconSize = compact ? 18.0 : 22.0;
+                                  final iconPadding = compact ? 2.0 : 6.0;
+                                  final volumeWidth = compact ? 76.0 : 96.0;
+
+                                  return Row(
+                                    children: [
+                                      IconButton(
+                                        onPressed: () => value.isPlaying ? widget.controller.pause() : widget.controller.play(),
+                                        icon: Icon(value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                                        iconSize: iconSize,
+                                        padding: EdgeInsets.all(iconPadding),
+                                        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          '${_fmt(value.position)} / ${_fmt(value.duration)}',
+                                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.volume_up, color: Colors.white70, size: 16),
+                                      SizedBox(
+                                        width: volumeWidth,
+                                        child: Slider(
+                                          value: value.volume,
+                                          min: 0,
+                                          max: 1,
+                                          onChanged: (v) => widget.controller.setVolume(v),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        onPressed: widget.onSubtitlePressed,
+                                        icon: const Icon(Icons.subtitles, color: Colors.white),
+                                        iconSize: iconSize,
+                                        padding: EdgeInsets.all(iconPadding),
+                                        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                      ),
+                                      IconButton(
+                                        onPressed: () => Navigator.of(context).pop(),
+                                        icon: const Icon(Icons.fullscreen_exit, color: Colors.white),
+                                        iconSize: iconSize,
+                                        padding: EdgeInsets.all(iconPadding),
+                                        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
-            Positioned(
-              top: 8,
-              left: 8,
-              child: IconButton(
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-              ),
-            ),
-            Positioned(
-              bottom: 16,
-              left: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)),
-                child: Text(
-                  '$title\n全屏手势：双击暂停/播放｜长按3x快进｜左右滑动±10秒',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

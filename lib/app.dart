@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 
 import 'core/auth_store.dart';
 import 'screens/login_screen.dart';
+import 'screens/main_shell_screen.dart';
 import 'screens/media_detail_screen.dart';
 import 'screens/media_list_screen.dart';
 import 'screens/player_screen.dart';
+import 'screens/placeholder_screen.dart';
+import 'screens/profile_screen.dart';
 
 class EmbyMvpApp extends StatelessWidget {
   const EmbyMvpApp({super.key});
@@ -30,9 +33,18 @@ class EmbyMvpApp extends StatelessWidget {
           path: '/login',
           builder: (_, state) => const LoginScreen(),
         ),
-        GoRoute(
-          path: '/media',
-          builder: (_, state) => const MediaListScreen(),
+        ShellRoute(
+          builder: (context, state, child) => MainShellScreen(child: child),
+          routes: [
+            GoRoute(
+              path: '/media',
+              builder: (_, state) => const MediaListScreen(),
+            ),
+            GoRoute(
+              path: '/me',
+              builder: (_, state) => const ProfileScreen(),
+            ),
+          ],
         ),
         GoRoute(
           path: '/media/:id',
@@ -48,6 +60,18 @@ class EmbyMvpApp extends StatelessWidget {
             final title = state.uri.queryParameters['title'] ?? '播放器';
             return PlayerScreen(mediaId: id, title: title);
           },
+        ),
+        GoRoute(
+          path: '/me/favorites',
+          builder: (_, state) => const PlaceholderScreen(title: '我的收藏'),
+        ),
+        GoRoute(
+          path: '/me/history',
+          builder: (_, state) => const PlaceholderScreen(title: '历史记录'),
+        ),
+        GoRoute(
+          path: '/me/settings',
+          builder: (_, state) => const PlaceholderScreen(title: '设置'),
         ),
       ],
     );
