@@ -35,11 +35,13 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
     try {
       final item = await MediaService.detail(widget.mediaId);
       final progress = await PlaybackService.getProgress(widget.mediaId);
+      if (!mounted) return;
       setState(() {
         _item = item;
         _progress = progress;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);

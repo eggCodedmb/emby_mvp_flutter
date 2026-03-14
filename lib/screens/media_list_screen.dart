@@ -35,8 +35,10 @@ class _MediaListScreenState extends State<MediaListScreen> {
     });
     try {
       final page = await MediaService.list();
+      if (!mounted) return;
       setState(() => _items = page.records);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
