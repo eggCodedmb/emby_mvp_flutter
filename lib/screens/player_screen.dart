@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import '../core/api_client.dart';
 import '../services/playback_service.dart';
+import '../services/user_action_service.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key, required this.mediaId, required this.title});
@@ -27,6 +28,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _saveTimer;
   String _subtitleLang = 'zh';
   bool _isLongPressing = false;
+  bool _favorite = false;
+  bool _updatingFavorite = false;
 
   @override
   void initState() {
@@ -48,6 +51,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (sec > 0) {
         await videoController.seekTo(Duration(seconds: sec));
       }
+      final favorite = await UserActionService.isFavorite(widget.mediaId);
 
       final subtitles = await _loadSubtitles(_subtitleLang);
 
@@ -75,6 +79,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() {
         _videoController = videoController;
         _chewieController = chewieController;
+        _favorite = favorite;
         _loading = false;
       });
     } catch (e) {
@@ -263,6 +268,95 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  Future<void> _toggleFavorite() async {
+    if (_updatingFavorite) return;
+    final prev = _favorite;
+    setState(() {
+      _updatingFavorite = true;
+      _favorite = !prev;
+    });
+    try {
+      if (prev) {
+        await UserActionService.removeFavorite(widget.mediaId);
+      } else {
+        await UserActionService.addFavorite(widget.mediaId);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _favorite = prev);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('收藏操作失败：${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    } finally {
+      if (mounted) setState(() => _updatingFavorite = false);
+    }
+  }
+
+  Future<void> _showFeedbackDialog() async {
+    final controller = TextEditingController();
+    final contactController = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('提交反馈'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              minLines: 3,
+              maxLines: 5,
+              decoration: const InputDecoration(hintText: '请输入反馈内容'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: contactController,
+              decoration: const InputDecoration(hintText: '联系方式（选填）'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('提交')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final content = controller.text.trim();
+    if (content.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('反馈内容不能为空')));
+      return;
+    }
+
+    try {
+      await UserActionService.submitFeedback(
+        mediaId: widget.mediaId,
+        content: content,
+        type: 'suggestion',
+        contact: contactController.text.trim().isEmpty ? null : contactController.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('反馈提交成功')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('反馈提交失败：${e.toString().replaceFirst('Exception: ', '')}')),
+      );
+    }
+  }
+
+  Future<void> _share() async {
+    final link = '${apiClient.baseUrl}/api/media/${widget.mediaId}/stream';
+    await Clipboard.setData(ClipboardData(text: link));
+    try {
+      await UserActionService.share(widget.mediaId, channel: 'copy_link');
+    } catch (_) {}
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('链接已复制')));
+  }
+
   @override
   void dispose() {
     final pos = _videoController?.value.position.inSeconds ?? 0;
@@ -330,7 +424,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                     Text('简介', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
                                     const SizedBox(height: 8),
                                     Text(
-                                      '控制按钮已放进视频原生内容区（底部边缘悬浮），不再放在简介区。\n'
                                       '包含：进度、播放/暂停、音量、字幕、音轨、全屏。\n'
                                       '交互：双击暂停/播放，长按3x，左右滑动±10秒。',
                                       style: TextStyle(
@@ -338,6 +431,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                         height: 1.6,
                                         fontSize: 14,
                                       ),
+                                    ),
+                                    const SizedBox(height: 14),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            onPressed: _updatingFavorite ? null : _toggleFavorite,
+                                            icon: Icon(_favorite ? Icons.favorite : Icons.favorite_border),
+                                            label: Text(_favorite ? '已收藏' : '收藏'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            onPressed: _showFeedbackDialog,
+                                            icon: const Icon(Icons.feedback_outlined),
+                                            label: const Text('反馈'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            onPressed: _share,
+                                            icon: const Icon(Icons.share_outlined),
+                                            label: const Text('分享'),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
