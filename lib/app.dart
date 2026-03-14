@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import 'core/auth_store.dart';
+import 'core/theme_store.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_shell_screen.dart';
 import 'screens/media_detail_screen.dart';
@@ -10,6 +11,7 @@ import 'screens/media_list_screen.dart';
 import 'screens/player_screen.dart';
 import 'screens/placeholder_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/settings_screen.dart';
 
 class EmbyMvpApp extends StatelessWidget {
   const EmbyMvpApp({super.key});
@@ -17,14 +19,21 @@ class EmbyMvpApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthStore>();
+    final themeStore = context.watch<ThemeStore>();
 
     final router = GoRouter(
-      initialLocation: '/media',
+      initialLocation: '/library',
       redirect: (context, state) {
         if (!auth.isReady) return null;
         final loggingIn = state.matchedLocation == '/login';
         if (!auth.isLoggedIn && !loggingIn) return '/login';
-        if (auth.isLoggedIn && loggingIn) return '/media';
+        if (auth.isLoggedIn && loggingIn) return '/library';
+
+        // 兼容旧路由
+        if (auth.isLoggedIn && state.matchedLocation == '/media') {
+          return '/library';
+        }
+
         return null;
       },
       refreshListenable: auth,
@@ -37,7 +46,7 @@ class EmbyMvpApp extends StatelessWidget {
           builder: (context, state, child) => MainShellScreen(child: child),
           routes: [
             GoRoute(
-              path: '/media',
+              path: '/library',
               builder: (_, state) => const MediaListScreen(),
             ),
             GoRoute(
@@ -71,7 +80,7 @@ class EmbyMvpApp extends StatelessWidget {
         ),
         GoRoute(
           path: '/me/settings',
-          builder: (_, state) => const PlaceholderScreen(title: '设置'),
+          builder: (_, state) => const SettingsScreen(),
         ),
       ],
     );
@@ -79,7 +88,13 @@ class EmbyMvpApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'Emby MVP Flutter',
       debugShowCheckedModeBanner: false,
+      themeMode: themeStore.themeMode,
       theme: ThemeData(
+        colorSchemeSeed: Colors.blue,
+        useMaterial3: true,
+        brightness: Brightness.light,
+      ),
+      darkTheme: ThemeData(
         colorSchemeSeed: Colors.blue,
         useMaterial3: true,
         brightness: Brightness.dark,

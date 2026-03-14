@@ -3,12 +3,16 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'core/auth_store.dart';
+import 'core/theme_store.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => AuthStore()..init(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthStore()..init()),
+        ChangeNotifierProvider(create: (_) => ThemeStore()..init()),
+      ],
       child: const EmbyMvpApp(),
     ),
   );
