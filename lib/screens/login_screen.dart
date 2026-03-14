@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
@@ -134,21 +135,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 6),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 220),
-                          transitionBuilder: (child, animation) => FadeTransition(
-                            opacity: animation,
-                            child: SlideTransition(
-                              position: Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero).animate(animation),
-                              child: child,
+                        AnimatedTextKit(
+                          key: ValueKey(_mode),
+                          isRepeatingAnimation: false,
+                          totalRepeatCount: 1,
+                          animatedTexts: [
+                            TypewriterAnimatedText(
+                              _isLogin ? '登录后开始你的媒体之旅' : '注册账号后开始你的媒体之旅',
+                              textAlign: TextAlign.center,
+                              speed: const Duration(milliseconds: 55),
+                              textStyle: const TextStyle(color: Colors.white70, fontSize: 14),
                             ),
-                          ),
-                          child: Text(
-                            _isLogin ? '登录后开始你的媒体之旅' : '注册账号后开始你的媒体之旅',
-                            key: ValueKey(_mode),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.white70),
-                          ),
+                          ],
                         ),
                         const SizedBox(height: 20),
                         AnimatedSwitcher(

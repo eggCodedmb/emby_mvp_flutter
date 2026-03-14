@@ -42,6 +42,7 @@ dependencies:
   chewie: ^1.13.0
   intl: ^0.20.2
   flutter_svg: ^2.2.1
+  animated_text_kit: ^4.3.0
 
 dev_dependencies:
   flutter_test:
