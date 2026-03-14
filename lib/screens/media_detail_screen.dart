@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/api_client.dart';
 import '../models/media_item.dart';
 import '../services/media_service.dart';
 import '../services/playback_service.dart';
@@ -66,6 +67,10 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               PlaybackService.posterUrl(_item!.id),
                               height: 220,
                               fit: BoxFit.cover,
+                              headers: {
+                                if (apiClient.token?.isNotEmpty == true)
+                                  'Authorization': 'Bearer ${apiClient.token}',
+                              },
                               errorBuilder: (_, err, stack) => Container(
                                 height: 220,
                                 color: Colors.grey.shade900,
