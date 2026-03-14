@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 
 import 'core/auth_store.dart';
 import 'core/theme_store.dart';
+import 'screens/favorites_screen.dart';
+import 'screens/history_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_shell_screen.dart';
 import 'screens/media_detail_screen.dart';
@@ -132,11 +134,11 @@ class EmbyMvpApp extends StatelessWidget {
         ),
         GoRoute(
           path: '/me/favorites',
-          pageBuilder: (_, state) => _transitionPage(state: state, child: const PlaceholderScreen(title: '我的收藏')),
+          pageBuilder: (_, state) => _transitionPage(state: state, child: const FavoritesScreen()),
         ),
         GoRoute(
           path: '/me/history',
-          pageBuilder: (_, state) => _transitionPage(state: state, child: const PlaceholderScreen(title: '历史记录')),
+          pageBuilder: (_, state) => _transitionPage(state: state, child: const HistoryScreen()),
         ),
         GoRoute(
           path: '/me/settings',
