@@ -20,8 +20,12 @@ class MediaListScreen extends StatefulWidget {
 
 class _MediaListScreenState extends State<MediaListScreen> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
 
   bool _loading = true;
+  bool _searching = false;
+  String _keyword = '';
   bool _loadingMore = false;
   bool _hasMore = true;
   String? _error;
@@ -41,6 +45,8 @@ class _MediaListScreenState extends State<MediaListScreen> {
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -60,7 +66,7 @@ class _MediaListScreenState extends State<MediaListScreen> {
       _hasMore = true;
     });
     try {
-      final page = await MediaService.list(page: 1, size: _pageSize);
+      final page = await MediaService.list(page: 1, size: _pageSize, keyword: _keyword);
       if (!mounted) return;
       setState(() {
         _items = page.records;
@@ -79,7 +85,7 @@ class _MediaListScreenState extends State<MediaListScreen> {
     setState(() => _loadingMore = true);
     try {
       final nextPage = _currentPage + 1;
-      final page = await MediaService.list(page: nextPage, size: _pageSize);
+      final page = await MediaService.list(page: nextPage, size: _pageSize, keyword: _keyword);
       if (!mounted) return;
       setState(() {
         _items.addAll(page.records);
@@ -93,11 +99,79 @@ class _MediaListScreenState extends State<MediaListScreen> {
     }
   }
 
+  void _toggleSearch() {
+    setState(() {
+      _searching = !_searching;
+      if (!_searching) {
+        _searchController.clear();
+        if (_keyword.isNotEmpty) {
+          _keyword = '';
+          _loadInitial();
+        }
+      }
+    });
+    if (_searching) {
+      Future.delayed(const Duration(milliseconds: 220), () {
+        if (mounted) _searchFocusNode.requestFocus();
+      });
+    } else {
+      _searchFocusNode.unfocus();
+    }
+  }
+
+  void _submitSearch(String value) {
+    final kw = value.trim();
+    if (kw == _keyword) return;
+    setState(() => _keyword = kw);
+    _loadInitial();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('媒体库'),
+        toolbarHeight: 66,
+        titleSpacing: 8,
+        leadingWidth: _searching ? 56 : 48,
+        leading: IconButton(
+          onPressed: _toggleSearch,
+          icon: Icon(_searching ? Icons.close : Icons.search),
+        ),
+        title: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          height: _searching ? 46 : 36,
+          alignment: Alignment.centerLeft,
+          child: _searching
+              ? TextField(
+                  controller: _searchController,
+                  focusNode: _searchFocusNode,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: _submitSearch,
+                  decoration: InputDecoration(
+                    hintText: '搜索媒体标题',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
+                    ),
+                    suffixIcon: _searchController.text.isEmpty
+                        ? null
+                        : IconButton(
+                            onPressed: () {
+                              _searchController.clear();
+                              _submitSearch('');
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.clear, size: 18),
+                          ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                )
+              : const Text('媒体库'),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         flexibleSpace: ClipRect(

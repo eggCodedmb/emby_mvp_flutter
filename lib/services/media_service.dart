@@ -3,8 +3,9 @@ import '../models/media_item.dart';
 import '../models/page_result.dart';
 
 class MediaService {
-  static Future<PageResult<MediaItem>> list({int page = 1, int size = 20}) async {
-    final data = await apiClient.get('/api/media?page=$page&size=$size') as Map<String, dynamic>;
+  static Future<PageResult<MediaItem>> list({int page = 1, int size = 20, String? keyword}) async {
+    final kw = (keyword == null || keyword.trim().isEmpty) ? '' : '&keyword=${Uri.encodeQueryComponent(keyword.trim())}';
+    final data = await apiClient.get('/api/media?page=$page&size=$size$kw') as Map<String, dynamic>;
     final records = ((data['records'] as List?) ?? [])
         .map((e) => MediaItem.fromJson(e as Map<String, dynamic>))
         .toList();
