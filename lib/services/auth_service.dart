@@ -7,9 +7,9 @@ class AuthService {
       'password': password,
     }) as Map<String, dynamic>;
 
-    final token = data['token'] as String?;
+    final token = (data['accessToken'] ?? data['token']) as String?;
     if (token == null || token.isEmpty) {
-      throw Exception('登录成功但未返回 token');
+      throw Exception('登录成功但未返回 token/accessToken');
     }
     await syncToken(token);
     return token;
