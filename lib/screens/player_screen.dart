@@ -324,16 +324,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               height: bottomHeight,
                               child: SingleChildScrollView(
                                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
-                                child: const Column(
+                                child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('简介', style: TextStyle(fontWeight: FontWeight.w700)),
-                                    SizedBox(height: 8),
+                                    Text('简介', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
+                                    const SizedBox(height: 8),
                                     Text(
                                       '控制按钮已放进视频原生内容区（底部边缘悬浮），不再放在简介区。\n'
                                       '包含：进度、播放/暂停、音量、字幕、音轨、全屏。\n'
                                       '交互：双击暂停/播放，长按3x，左右滑动±10秒。',
-                                      style: TextStyle(color: Colors.white70, height: 1.5),
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                        height: 1.6,
+                                        fontSize: 14,
+                                      ),
                                     ),
                                   ],
                                 ),

@@ -1,12 +1,12 @@
 import 'dart:math';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 
 import '../core/api_client.dart';
-import '../core/auth_store.dart';
+
 import '../models/media_item.dart';
 import '../services/media_service.dart';
 import '../services/playback_service.dart';
@@ -51,12 +51,16 @@ class _MediaListScreenState extends State<MediaListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('媒体库'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.70)),
+          ),
+        ),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
-          IconButton(
-            onPressed: () => context.read<AuthStore>().logout(),
-            icon: const Icon(Icons.logout),
-          ),
         ],
       ),
       body: _loading
