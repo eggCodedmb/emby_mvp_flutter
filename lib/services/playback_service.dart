@@ -10,6 +10,13 @@ class PlaybackService {
     await apiClient.post('/api/playback/$mediaId/progress', body: {
       'positionSec': positionSec,
     });
+
+    // 同步写入“历史记录”新接口（失败不影响主播放进度）
+    try {
+      await apiClient.put('/api/user/history/$mediaId', body: {
+        'lastPositionSec': positionSec,
+      });
+    } catch (_) {}
   }
 
   static String streamUrl(int mediaId) => '${apiClient.baseUrl}/api/media/$mediaId/stream';
