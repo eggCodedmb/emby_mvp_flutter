@@ -24,8 +24,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _loading = true;
   String? _error;
   Timer? _saveTimer;
-  Timer? _controlsHideTimer;
-  bool _controlsVisible = false;
   String _subtitleLang = 'zh';
   bool _isLongPressing = false;
 
@@ -57,20 +55,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
         autoPlay: true,
         allowFullScreen: false,
         allowMuting: true,
-        allowPlaybackSpeedChanging: true,
+        allowPlaybackSpeedChanging: false,
         subtitle: Subtitles(subtitles),
         showSubtitles: true,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: Colors.redAccent,
-          bufferedColor: Colors.white30,
-          handleColor: Colors.white,
-          backgroundColor: Colors.white24,
+        customControls: _NativeOverlayControls(
+          onSubtitlePressed: _showSubtitleMenu,
+          onAudioTrackPressed: _showAudioTrackMenu,
+          onFullscreenPressed: _openFullscreen,
         ),
       );
-
-      videoController.addListener(() {
-        if (mounted) setState(() {});
-      });
 
       _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
         final pos = videoController.value.position.inSeconds;
@@ -88,18 +81,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
-      });
-    }
-  }
-
-  void _showControls({bool autoHide = true}) {
-    _controlsHideTimer?.cancel();
-    if (!_controlsVisible) {
-      setState(() => _controlsVisible = true);
-    }
-    if (autoHide) {
-      _controlsHideTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted) setState(() => _controlsVisible = false);
       });
     }
   }
@@ -126,7 +107,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final text = source.replaceAll('\r\n', '\n');
     final blocks = text.split('\n\n');
     final results = <Subtitle>[];
-
     for (final block in blocks) {
       final lines = block.split('\n').where((e) => e.trim().isNotEmpty).toList();
       if (lines.length < 2) continue;
@@ -140,7 +120,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final content = lines.skipWhile((l) => !l.contains('-->')).skip(1).join('\n');
       results.add(Subtitle(index: results.length, start: start, end: end, text: content));
     }
-
     return results;
   }
 
@@ -160,7 +139,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final text = source.replaceAll('\r\n', '\n').replaceAll('WEBVTT', '').trim();
     final blocks = text.split('\n\n');
     final results = <Subtitle>[];
-
     for (final block in blocks) {
       final lines = block.split('\n').where((e) => e.trim().isNotEmpty).toList();
       if (lines.isEmpty) continue;
@@ -174,7 +152,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final content = lines.skipWhile((l) => !l.contains('-->')).skip(1).join('\n');
       results.add(Subtitle(index: results.length, start: start, end: end, text: content));
     }
-
     return results;
   }
 
@@ -193,11 +170,55 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _switchSubtitle(String lang) async {
     final cc = _chewieController;
     if (cc == null) return;
-
     setState(() => _subtitleLang = lang);
     final subs = await _loadSubtitles(lang);
     cc.setSubtitle(subs);
     if (mounted) setState(() {});
+  }
+
+  Future<void> _showSubtitleMenu() async {
+    final lang = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              title: const Text('中文字幕'),
+              subtitle: const Text('zh'),
+              trailing: const Icon(Icons.subtitles),
+              onTap: () => Navigator.pop(ctx, 'zh'),
+            ),
+            ListTile(
+              title: const Text('English Subtitle'),
+              subtitle: const Text('en'),
+              trailing: const Icon(Icons.subtitles),
+              onTap: () => Navigator.pop(ctx, 'en'),
+            ),
+            ListTile(
+              title: const Text('日本語字幕'),
+              subtitle: const Text('ja'),
+              trailing: const Icon(Icons.subtitles),
+              onTap: () => Navigator.pop(ctx, 'ja'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (lang == null) return;
+    await _switchSubtitle(lang);
+  }
+
+  Future<void> _showAudioTrackMenu() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => const SafeArea(
+        child: ListTile(
+          leading: Icon(Icons.audiotrack),
+          title: Text('默认音轨'),
+          subtitle: Text('当前版本仅单音轨占位，后续可接后端多音轨接口'),
+        ),
+      ),
+    );
   }
 
   Future<void> _jumpBySeconds(int seconds) async {
@@ -213,12 +234,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _togglePlayPause() {
     final vc = _videoController;
     if (vc == null) return;
-    if (vc.value.isPlaying) {
-      vc.pause();
-    } else {
-      vc.play();
-    }
-    _showControls();
+    vc.value.isPlaying ? vc.pause() : vc.play();
   }
 
   void _setLongPressFastForward(bool enable) {
@@ -245,18 +261,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  String _formatTime(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return h > 0 ? '$h:$m:$s' : '$m:$s';
-  }
-
   @override
   void dispose() {
     final pos = _videoController?.value.position.inSeconds ?? 0;
     PlaybackService.saveProgress(widget.mediaId, pos);
-    _controlsHideTimer?.cancel();
     _saveTimer?.cancel();
     _chewieController?.dispose();
     _videoController?.dispose();
@@ -266,137 +274,47 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final chewie = _chewieController;
-    final vc = _videoController;
-
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Text('播放失败：$_error'))
-              : chewie == null || vc == null
+              : chewie == null
                   ? const Center(child: Text('播放器初始化失败'))
                   : LayoutBuilder(
                       builder: (context, constraints) {
                         final topHeight = constraints.maxHeight / 3;
                         final bottomHeight = constraints.maxHeight * 2 / 3;
-                        final positionMs = vc.value.position.inMilliseconds.toDouble();
-                        final durationMs = vc.value.duration.inMilliseconds.toDouble();
-
                         return Column(
                           children: [
                             SizedBox(
                               height: topHeight,
                               width: double.infinity,
-                              child: MouseRegion(
-                                onEnter: (_) => _showControls(),
-                                onHover: (_) => _showControls(),
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () => _showControls(),
-                                  onDoubleTap: _togglePlayPause,
-                                  onLongPressStart: (_) => _setLongPressFastForward(true),
-                                  onLongPressEnd: (_) => _setLongPressFastForward(false),
-                                  onHorizontalDragEnd: (details) {
-                                    final vx = details.primaryVelocity ?? 0;
-                                    if (vx > 150) {
-                                      _jumpBySeconds(10);
-                                    } else if (vx < -150) {
-                                      _jumpBySeconds(-10);
-                                    }
-                                  },
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      Chewie(controller: chewie),
-                                      if (_isLongPressing)
-                                        Positioned(
-                                          right: 12,
-                                          top: 12,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(10)),
-                                            child: const Text('3.0x 快进中', style: TextStyle(color: Colors.white)),
-                                          ),
-                                        ),
-                                      AnimatedOpacity(
-                                        duration: const Duration(milliseconds: 180),
-                                        opacity: _controlsVisible ? 1 : 0,
-                                        child: Align(
-                                          alignment: Alignment.bottomCenter,
-                                          child: IgnorePointer(
-                                            ignoring: !_controlsVisible,
-                                            child: Container(
-                                              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                                              decoration: const BoxDecoration(
-                                                gradient: LinearGradient(
-                                                  begin: Alignment.topCenter,
-                                                  end: Alignment.bottomCenter,
-                                                  colors: [Colors.transparent, Color(0xCC000000)],
-                                                ),
-                                              ),
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Slider(
-                                                    value: durationMs <= 0 ? 0 : positionMs.clamp(0, durationMs),
-                                                    min: 0,
-                                                    max: durationMs <= 0 ? 1 : durationMs,
-                                                    onChanged: (v) => vc.seekTo(Duration(milliseconds: v.toInt())),
-                                                  ),
-                                                  Row(
-                                                    children: [
-                                                      IconButton(
-                                                        onPressed: _togglePlayPause,
-                                                        icon: Icon(vc.value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
-                                                      ),
-                                                      Text(
-                                                        '${_formatTime(vc.value.position)} / ${_formatTime(vc.value.duration)}',
-                                                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                                                      ),
-                                                      const Spacer(),
-                                                      const Icon(Icons.volume_up, color: Colors.white70, size: 18),
-                                                      SizedBox(
-                                                        width: 90,
-                                                        child: Slider(
-                                                          value: vc.value.volume,
-                                                          min: 0,
-                                                          max: 1,
-                                                          onChanged: (v) => vc.setVolume(v),
-                                                        ),
-                                                      ),
-                                                      PopupMenuButton<String>(
-                                                        tooltip: '字幕',
-                                                        onSelected: _switchSubtitle,
-                                                        itemBuilder: (_) => const [
-                                                          PopupMenuItem(value: 'zh', child: Text('中文字幕')),
-                                                          PopupMenuItem(value: 'en', child: Text('English')),
-                                                          PopupMenuItem(value: 'ja', child: Text('日本語')),
-                                                        ],
-                                                        icon: const Icon(Icons.subtitles, color: Colors.white),
-                                                      ),
-                                                      PopupMenuButton<String>(
-                                                        tooltip: '音轨',
-                                                        onSelected: (_) {},
-                                                        itemBuilder: (_) => const [
-                                                          PopupMenuItem(value: 'default', child: Text('默认音轨')),
-                                                        ],
-                                                        icon: const Icon(Icons.audiotrack, color: Colors.white),
-                                                      ),
-                                                      IconButton(
-                                                        onPressed: _openFullscreen,
-                                                        icon: const Icon(Icons.fullscreen, color: Colors.white),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
+                              child: GestureDetector(
+                                onDoubleTap: _togglePlayPause,
+                                onLongPressStart: (_) => _setLongPressFastForward(true),
+                                onLongPressEnd: (_) => _setLongPressFastForward(false),
+                                onHorizontalDragEnd: (details) {
+                                  final vx = details.primaryVelocity ?? 0;
+                                  if (vx > 150) _jumpBySeconds(10);
+                                  if (vx < -150) _jumpBySeconds(-10);
+                                },
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    Chewie(controller: chewie),
+                                    if (_isLongPressing)
+                                      Positioned(
+                                        right: 12,
+                                        top: 12,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                          decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(10)),
+                                          child: const Text('3.0x 快进中', style: TextStyle(color: Colors.white)),
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -404,22 +322,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               height: bottomHeight,
                               child: SingleChildScrollView(
                                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
-                                child: Column(
+                                child: const Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(widget.title, style: Theme.of(context).textTheme.headlineSmall),
-                                    const SizedBox(height: 10),
+                                    Text('简介', style: TextStyle(fontWeight: FontWeight.w700)),
+                                    SizedBox(height: 8),
                                     Text(
-                                      '媒体ID：${widget.mediaId}',
-                                      style: const TextStyle(color: Colors.white70),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    const Text('简介', style: TextStyle(fontWeight: FontWeight.w700)),
-                                    const SizedBox(height: 8),
-                                    const Text(
-                                      '控制栏已改为画面底部边缘悬浮，默认隐藏；鼠标悬停或点击视频时显示。\n'
-                                      '手势：双击暂停/播放，长按3x快进，左右滑动±10秒。\n'
-                                      '上方视频占1/3，下方简介占2/3。',
+                                      '控制按钮已放进视频原生内容区（底部边缘悬浮），不再放在简介区。\n'
+                                      '包含：进度、播放/暂停、音量、字幕、音轨、全屏。\n'
+                                      '交互：双击暂停/播放，长按3x，左右滑动±10秒。',
                                       style: TextStyle(color: Colors.white70, height: 1.5),
                                     ),
                                   ],
@@ -430,6 +341,122 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         );
                       },
                     ),
+    );
+  }
+}
+
+class _NativeOverlayControls extends StatefulWidget {
+  const _NativeOverlayControls({
+    required this.onSubtitlePressed,
+    required this.onAudioTrackPressed,
+    required this.onFullscreenPressed,
+  });
+
+  final VoidCallback onSubtitlePressed;
+  final VoidCallback onAudioTrackPressed;
+  final VoidCallback onFullscreenPressed;
+
+  @override
+  State<_NativeOverlayControls> createState() => _NativeOverlayControlsState();
+}
+
+class _NativeOverlayControlsState extends State<_NativeOverlayControls> {
+  bool _visible = false;
+  Timer? _timer;
+
+  void _show() {
+    _timer?.cancel();
+    if (!_visible) setState(() => _visible = true);
+    _timer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _visible = false);
+    });
+  }
+
+  String _fmt(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chewie = ChewieController.of(context);
+    final vc = chewie.videoPlayerController;
+    final durMs = vc.value.duration.inMilliseconds.toDouble();
+    final posMs = vc.value.position.inMilliseconds.toDouble().clamp(0.0, durMs <= 0 ? 1.0 : durMs).toDouble();
+
+    return MouseRegion(
+      onHover: (_) => _show(),
+      onEnter: (_) => _show(),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _show,
+        child: Stack(
+          children: [
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 180),
+              opacity: _visible ? 1 : 0,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: IgnorePointer(
+                  ignoring: !_visible,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Color(0xCC000000)],
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Slider(
+                          value: durMs <= 0 ? 0 : posMs,
+                          min: 0,
+                          max: durMs <= 0 ? 1 : durMs,
+                          onChanged: (v) => vc.seekTo(Duration(milliseconds: v.toInt())),
+                        ),
+                        Row(
+                          children: [
+                            IconButton(
+                              onPressed: () => vc.value.isPlaying ? vc.pause() : vc.play(),
+                              icon: Icon(vc.value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                            ),
+                            Text('${_fmt(vc.value.position)} / ${_fmt(vc.value.duration)}', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                            const Spacer(),
+                            const Icon(Icons.volume_up, color: Colors.white70, size: 18),
+                            SizedBox(
+                              width: 90,
+                              child: Slider(
+                                value: vc.value.volume,
+                                min: 0,
+                                max: 1,
+                                onChanged: (v) => vc.setVolume(v),
+                              ),
+                            ),
+                            IconButton(onPressed: widget.onSubtitlePressed, icon: const Icon(Icons.subtitles, color: Colors.white)),
+                            IconButton(onPressed: widget.onAudioTrackPressed, icon: const Icon(Icons.audiotrack, color: Colors.white)),
+                            IconButton(onPressed: widget.onFullscreenPressed, icon: const Icon(Icons.fullscreen, color: Colors.white)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -463,11 +490,8 @@ class _FullscreenPlayerPage extends StatelessWidget {
                 onLongPressEnd: (_) => onLongPressFastForward(false),
                 onHorizontalDragEnd: (details) {
                   final vx = details.primaryVelocity ?? 0;
-                  if (vx > 150) {
-                    onJumpBySeconds(10);
-                  } else if (vx < -150) {
-                    onJumpBySeconds(-10);
-                  }
+                  if (vx > 150) onJumpBySeconds(10);
+                  if (vx < -150) onJumpBySeconds(-10);
                 },
                 child: Center(
                   child: AspectRatio(
