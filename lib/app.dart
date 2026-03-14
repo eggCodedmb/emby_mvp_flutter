@@ -16,6 +16,39 @@ import 'screens/settings_screen.dart';
 class EmbyMvpApp extends StatelessWidget {
   const EmbyMvpApp({super.key});
 
+  ThemeData _buildTheme(Brightness brightness) {
+    final base = ThemeData(
+      colorSchemeSeed: Colors.blue,
+      useMaterial3: true,
+      brightness: brightness,
+    );
+
+    final textTheme = base.textTheme.apply(
+      bodyColor: base.colorScheme.onSurface,
+      displayColor: base.colorScheme.onSurface,
+    );
+
+    return base.copyWith(
+      textTheme: textTheme,
+      primaryTextTheme: textTheme,
+      visualDensity: VisualDensity.adaptivePlatformDensity,
+      scaffoldBackgroundColor: brightness == Brightness.dark ? const Color(0xFF0B1220) : const Color(0xFFF7F9FC),
+      appBarTheme: AppBarTheme(
+        centerTitle: true,
+        elevation: 0,
+        titleTextStyle: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        height: 66,
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => textTheme.labelSmall?.copyWith(
+            fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthStore>();
@@ -89,16 +122,18 @@ class EmbyMvpApp extends StatelessWidget {
       title: 'Emby MVP Flutter',
       debugShowCheckedModeBanner: false,
       themeMode: themeStore.themeMode,
-      theme: ThemeData(
-        colorSchemeSeed: Colors.blue,
-        useMaterial3: true,
-        brightness: Brightness.light,
-      ),
-      darkTheme: ThemeData(
-        colorSchemeSeed: Colors.blue,
-        useMaterial3: true,
-        brightness: Brightness.dark,
-      ),
+      theme: _buildTheme(Brightness.light),
+      darkTheme: _buildTheme(Brightness.dark),
+      builder: (context, child) {
+        final media = MediaQuery.of(context);
+        final clampedScale = media.textScaler.clamp(minScaleFactor: 0.9, maxScaleFactor: 1.15);
+        return MediaQuery(
+          data: media.copyWith(
+            textScaler: clampedScale,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       routerConfig: router,
     );
   }
