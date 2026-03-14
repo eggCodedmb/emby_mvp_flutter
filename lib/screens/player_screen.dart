@@ -24,6 +24,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _loading = true;
   String? _error;
   Timer? _saveTimer;
+  Timer? _controlsHideTimer;
+  bool _controlsVisible = false;
   String _subtitleLang = 'zh';
   bool _isLongPressing = false;
 
@@ -58,17 +60,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
         allowPlaybackSpeedChanging: true,
         subtitle: Subtitles(subtitles),
         showSubtitles: true,
-        subtitleBuilder: (context, text) => Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          color: Colors.black54,
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.4),
-          ),
+        materialProgressColors: ChewieProgressColors(
+          playedColor: Colors.redAccent,
+          bufferedColor: Colors.white30,
+          handleColor: Colors.white,
+          backgroundColor: Colors.white24,
         ),
       );
+
+      videoController.addListener(() {
+        if (mounted) setState(() {});
+      });
 
       _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
         final pos = videoController.value.position.inSeconds;
@@ -86,6 +88,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
+      });
+    }
+  }
+
+  void _showControls({bool autoHide = true}) {
+    _controlsHideTimer?.cancel();
+    if (!_controlsVisible) {
+      setState(() => _controlsVisible = true);
+    }
+    if (autoHide) {
+      _controlsHideTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _controlsVisible = false);
       });
     }
   }
@@ -192,9 +206,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final current = vc.value.position;
     final target = current + Duration(seconds: seconds);
     final duration = vc.value.duration;
-    final clamped = target < Duration.zero
-        ? Duration.zero
-        : (target > duration ? duration : target);
+    final clamped = target < Duration.zero ? Duration.zero : (target > duration ? duration : target);
     await vc.seekTo(clamped);
   }
 
@@ -206,7 +218,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } else {
       vc.play();
     }
-    setState(() {});
+    _showControls();
   }
 
   void _setLongPressFastForward(bool enable) {
@@ -220,7 +232,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _openFullscreen() {
     final vc = _videoController;
     if (vc == null || !vc.value.isInitialized) return;
-
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _FullscreenPlayerPage(
@@ -245,6 +256,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void dispose() {
     final pos = _videoController?.value.position.inSeconds ?? 0;
     PlaybackService.saveProgress(widget.mediaId, pos);
+    _controlsHideTimer?.cancel();
     _saveTimer?.cancel();
     _chewieController?.dispose();
     _videoController?.dispose();
@@ -268,52 +280,123 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       builder: (context, constraints) {
                         final topHeight = constraints.maxHeight / 3;
                         final bottomHeight = constraints.maxHeight * 2 / 3;
-                        final position = vc.value.position;
-                        final duration = vc.value.duration;
+                        final positionMs = vc.value.position.inMilliseconds.toDouble();
+                        final durationMs = vc.value.duration.inMilliseconds.toDouble();
 
                         return Column(
                           children: [
                             SizedBox(
                               height: topHeight,
                               width: double.infinity,
-                              child: GestureDetector(
-                                onDoubleTap: _togglePlayPause,
-                                onLongPressStart: (_) => _setLongPressFastForward(true),
-                                onLongPressEnd: (_) => _setLongPressFastForward(false),
-                                onHorizontalDragEnd: (details) {
-                                  final vx = details.primaryVelocity ?? 0;
-                                  if (vx > 150) {
-                                    _jumpBySeconds(10);
-                                  } else if (vx < -150) {
-                                    _jumpBySeconds(-10);
-                                  }
-                                },
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    Chewie(controller: chewie),
-                                    Positioned(
-                                      right: 10,
-                                      top: 10,
-                                      child: IconButton.filledTonal(
-                                        onPressed: _openFullscreen,
-                                        icon: const Icon(Icons.fullscreen),
-                                      ),
-                                    ),
-                                    if (_isLongPressing)
-                                      Positioned(
-                                        right: 12,
-                                        top: 56,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black87,
-                                            borderRadius: BorderRadius.circular(10),
+                              child: MouseRegion(
+                                onEnter: (_) => _showControls(),
+                                onHover: (_) => _showControls(),
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => _showControls(),
+                                  onDoubleTap: _togglePlayPause,
+                                  onLongPressStart: (_) => _setLongPressFastForward(true),
+                                  onLongPressEnd: (_) => _setLongPressFastForward(false),
+                                  onHorizontalDragEnd: (details) {
+                                    final vx = details.primaryVelocity ?? 0;
+                                    if (vx > 150) {
+                                      _jumpBySeconds(10);
+                                    } else if (vx < -150) {
+                                      _jumpBySeconds(-10);
+                                    }
+                                  },
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      Chewie(controller: chewie),
+                                      if (_isLongPressing)
+                                        Positioned(
+                                          right: 12,
+                                          top: 12,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(10)),
+                                            child: const Text('3.0x 快进中', style: TextStyle(color: Colors.white)),
                                           ),
-                                          child: const Text('3.0x 快进中', style: TextStyle(color: Colors.white)),
+                                        ),
+                                      AnimatedOpacity(
+                                        duration: const Duration(milliseconds: 180),
+                                        opacity: _controlsVisible ? 1 : 0,
+                                        child: Align(
+                                          alignment: Alignment.bottomCenter,
+                                          child: IgnorePointer(
+                                            ignoring: !_controlsVisible,
+                                            child: Container(
+                                              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                                              decoration: const BoxDecoration(
+                                                gradient: LinearGradient(
+                                                  begin: Alignment.topCenter,
+                                                  end: Alignment.bottomCenter,
+                                                  colors: [Colors.transparent, Color(0xCC000000)],
+                                                ),
+                                              ),
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Slider(
+                                                    value: durationMs <= 0 ? 0 : positionMs.clamp(0, durationMs),
+                                                    min: 0,
+                                                    max: durationMs <= 0 ? 1 : durationMs,
+                                                    onChanged: (v) => vc.seekTo(Duration(milliseconds: v.toInt())),
+                                                  ),
+                                                  Row(
+                                                    children: [
+                                                      IconButton(
+                                                        onPressed: _togglePlayPause,
+                                                        icon: Icon(vc.value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                                                      ),
+                                                      Text(
+                                                        '${_formatTime(vc.value.position)} / ${_formatTime(vc.value.duration)}',
+                                                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                                                      ),
+                                                      const Spacer(),
+                                                      const Icon(Icons.volume_up, color: Colors.white70, size: 18),
+                                                      SizedBox(
+                                                        width: 90,
+                                                        child: Slider(
+                                                          value: vc.value.volume,
+                                                          min: 0,
+                                                          max: 1,
+                                                          onChanged: (v) => vc.setVolume(v),
+                                                        ),
+                                                      ),
+                                                      PopupMenuButton<String>(
+                                                        tooltip: '字幕',
+                                                        onSelected: _switchSubtitle,
+                                                        itemBuilder: (_) => const [
+                                                          PopupMenuItem(value: 'zh', child: Text('中文字幕')),
+                                                          PopupMenuItem(value: 'en', child: Text('English')),
+                                                          PopupMenuItem(value: 'ja', child: Text('日本語')),
+                                                        ],
+                                                        icon: const Icon(Icons.subtitles, color: Colors.white),
+                                                      ),
+                                                      PopupMenuButton<String>(
+                                                        tooltip: '音轨',
+                                                        onSelected: (_) {},
+                                                        itemBuilder: (_) => const [
+                                                          PopupMenuItem(value: 'default', child: Text('默认音轨')),
+                                                        ],
+                                                        icon: const Icon(Icons.audiotrack, color: Colors.white),
+                                                      ),
+                                                      IconButton(
+                                                        onPressed: _openFullscreen,
+                                                        icon: const Icon(Icons.fullscreen, color: Colors.white),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -327,66 +410,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                     Text(widget.title, style: Theme.of(context).textTheme.headlineSmall),
                                     const SizedBox(height: 10),
                                     Text(
-                                      '媒体ID：${widget.mediaId}  ·  进度：${_formatTime(position)} / ${_formatTime(duration)}',
+                                      '媒体ID：${widget.mediaId}',
                                       style: const TextStyle(color: Colors.white70),
-                                    ),
-                                    const SizedBox(height: 14),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        FilledButton.icon(
-                                          onPressed: _togglePlayPause,
-                                          icon: Icon(vc.value.isPlaying ? Icons.pause : Icons.play_arrow),
-                                          label: Text(vc.value.isPlaying ? '暂停' : '播放'),
-                                        ),
-                                        OutlinedButton.icon(
-                                          onPressed: () => _jumpBySeconds(-10),
-                                          icon: const Icon(Icons.replay_10),
-                                          label: const Text('后退10秒'),
-                                        ),
-                                        OutlinedButton.icon(
-                                          onPressed: () => _jumpBySeconds(10),
-                                          icon: const Icon(Icons.forward_10),
-                                          label: const Text('前进10秒'),
-                                        ),
-                                        OutlinedButton.icon(
-                                          onPressed: _openFullscreen,
-                                          icon: const Icon(Icons.fullscreen),
-                                          label: const Text('全屏'),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 16),
-                                    const Text('字幕切换', style: TextStyle(fontWeight: FontWeight.w700)),
-                                    const SizedBox(height: 8),
-                                    Wrap(
-                                      spacing: 10,
-                                      children: [
-                                        ChoiceChip(
-                                          label: const Text('中文'),
-                                          selected: _subtitleLang == 'zh',
-                                          onSelected: (_) => _switchSubtitle('zh'),
-                                        ),
-                                        ChoiceChip(
-                                          label: const Text('English'),
-                                          selected: _subtitleLang == 'en',
-                                          onSelected: (_) => _switchSubtitle('en'),
-                                        ),
-                                        ChoiceChip(
-                                          label: const Text('日本語'),
-                                          selected: _subtitleLang == 'ja',
-                                          onSelected: (_) => _switchSubtitle('ja'),
-                                        ),
-                                      ],
                                     ),
                                     const SizedBox(height: 16),
                                     const Text('简介', style: TextStyle(fontWeight: FontWeight.w700)),
                                     const SizedBox(height: 8),
                                     const Text(
-                                      '手势说明：双击暂停/播放，长按3x快进，左右滑动快退/快进10秒。\n'
-                                      '本页布局：视频区占上方 1/3，简介与操作区占下方 2/3。\n'
-                                      '全屏模式下同样支持手势操作。',
+                                      '控制栏已改为画面底部边缘悬浮，默认隐藏；鼠标悬停或点击视频时显示。\n'
+                                      '手势：双击暂停/播放，长按3x快进，左右滑动±10秒。\n'
+                                      '上方视频占1/3，下方简介占2/3。',
                                       style: TextStyle(color: Colors.white70, height: 1.5),
                                     ),
                                   ],
@@ -447,22 +480,9 @@ class _FullscreenPlayerPage extends StatelessWidget {
             Positioned(
               top: 8,
               left: 8,
-              right: 8,
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  ),
-                  Expanded(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
+              child: IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
               ),
             ),
             Positioned(
@@ -471,14 +491,11 @@ class _FullscreenPlayerPage extends StatelessWidget {
               right: 16,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Text(
-                  '全屏手势：双击暂停/播放｜长按3x快进｜左右滑动±10秒',
+                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)),
+                child: Text(
+                  '$title\n全屏手势：双击暂停/播放｜长按3x快进｜左右滑动±10秒',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ),
             ),
