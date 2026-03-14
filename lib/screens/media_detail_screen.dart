@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/api_client.dart';
@@ -77,7 +78,8 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                                 height: 220,
                                 color: Colors.grey.shade900,
                                 alignment: Alignment.center,
-                                child: const Icon(Icons.movie, size: 48),
+                                padding: const EdgeInsets.all(28),
+                                child: SvgPicture.asset('assets/logo.svg', fit: BoxFit.contain),
                               ),
                             ),
                           ),

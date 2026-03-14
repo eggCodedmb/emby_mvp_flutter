@@ -78,7 +78,13 @@ class _LoginScreenState extends State<LoginScreen> {
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(18),
                             ),
-                            child: SvgPicture.asset('assets/logo.svg'),
+                            child: SvgPicture.asset(
+                              'assets/logo.svg',
+                              fit: BoxFit.contain,
+                              placeholderBuilder: (_) => const Center(
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 14),

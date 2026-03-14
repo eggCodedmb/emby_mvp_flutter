@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -104,7 +105,11 @@ class _MediaListScreenState extends State<MediaListScreen> {
                                       errorBuilder: (_, err, stack) => Container(
                                         color: Colors.grey.shade900,
                                         alignment: Alignment.center,
-                                        child: const Icon(Icons.movie_outlined, size: 36),
+                                        padding: const EdgeInsets.all(18),
+                                        child: SvgPicture.asset(
+                                          'assets/logo.svg',
+                                          fit: BoxFit.contain,
+                                        ),
                                       ),
                                     ),
                                   ),

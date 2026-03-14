@@ -389,8 +389,6 @@ class _NativeOverlayControlsState extends State<_NativeOverlayControls> {
   Widget build(BuildContext context) {
     final chewie = ChewieController.of(context);
     final vc = chewie.videoPlayerController;
-    final durMs = vc.value.duration.inMilliseconds.toDouble();
-    final posMs = vc.value.position.inMilliseconds.toDouble().clamp(0.0, durMs <= 0 ? 1.0 : durMs).toDouble();
 
     return MouseRegion(
       onHover: (_) => _show(),
@@ -398,63 +396,70 @@ class _NativeOverlayControlsState extends State<_NativeOverlayControls> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: _show,
-        child: Stack(
-          children: [
-            AnimatedOpacity(
-              duration: const Duration(milliseconds: 180),
-              opacity: _visible ? 1 : 0,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: IgnorePointer(
-                  ignoring: !_visible,
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Color(0xCC000000)],
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Slider(
-                          value: durMs <= 0 ? 0 : posMs,
-                          min: 0,
-                          max: durMs <= 0 ? 1 : durMs,
-                          onChanged: (v) => vc.seekTo(Duration(milliseconds: v.toInt())),
+        child: ValueListenableBuilder<VideoPlayerValue>(
+          valueListenable: vc,
+          builder: (context, value, _) {
+            final durationMs = value.duration.inMilliseconds.toDouble();
+            final positionMs = value.position.inMilliseconds.toDouble().clamp(0.0, durationMs <= 0 ? 1.0 : durationMs).toDouble();
+            return Stack(
+              children: [
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: _visible ? 1 : 0,
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: IgnorePointer(
+                      ignoring: !_visible,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.transparent, Color(0xCC000000)],
+                          ),
                         ),
-                        Row(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              onPressed: () => vc.value.isPlaying ? vc.pause() : vc.play(),
-                              icon: Icon(vc.value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                            Slider(
+                              value: durationMs <= 0 ? 0 : positionMs,
+                              min: 0,
+                              max: durationMs <= 0 ? 1 : durationMs,
+                              onChanged: (v) => vc.seekTo(Duration(milliseconds: v.toInt())),
                             ),
-                            Text('${_fmt(vc.value.position)} / ${_fmt(vc.value.duration)}', style: const TextStyle(color: Colors.white, fontSize: 12)),
-                            const Spacer(),
-                            const Icon(Icons.volume_up, color: Colors.white70, size: 18),
-                            SizedBox(
-                              width: 90,
-                              child: Slider(
-                                value: vc.value.volume,
-                                min: 0,
-                                max: 1,
-                                onChanged: (v) => vc.setVolume(v),
-                              ),
+                            Row(
+                              children: [
+                                IconButton(
+                                  onPressed: () => value.isPlaying ? vc.pause() : vc.play(),
+                                  icon: Icon(value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                                ),
+                                Text('${_fmt(value.position)} / ${_fmt(value.duration)}', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                const Spacer(),
+                                const Icon(Icons.volume_up, color: Colors.white70, size: 18),
+                                SizedBox(
+                                  width: 90,
+                                  child: Slider(
+                                    value: value.volume,
+                                    min: 0,
+                                    max: 1,
+                                    onChanged: (v) => vc.setVolume(v),
+                                  ),
+                                ),
+                                IconButton(onPressed: widget.onSubtitlePressed, icon: const Icon(Icons.subtitles, color: Colors.white)),
+                                IconButton(onPressed: widget.onAudioTrackPressed, icon: const Icon(Icons.audiotrack, color: Colors.white)),
+                                IconButton(onPressed: widget.onFullscreenPressed, icon: const Icon(Icons.fullscreen, color: Colors.white)),
+                              ],
                             ),
-                            IconButton(onPressed: widget.onSubtitlePressed, icon: const Icon(Icons.subtitles, color: Colors.white)),
-                            IconButton(onPressed: widget.onAudioTrackPressed, icon: const Icon(Icons.audiotrack, color: Colors.white)),
-                            IconButton(onPressed: widget.onFullscreenPressed, icon: const Icon(Icons.fullscreen, color: Colors.white)),
                           ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
