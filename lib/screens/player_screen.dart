@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:video_player/video_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../core/api_client.dart';
 import '../services/playback_service.dart';
@@ -21,8 +21,9 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  VideoPlayerController? _videoController;
-  ChewieController? _chewieController;
+  late final Player _player;
+  late final VideoController _videoController;
+
   bool _loading = true;
   String? _error;
   Timer? _saveTimer;
@@ -30,55 +31,48 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _isLongPressing = false;
   bool _favorite = false;
   bool _updatingFavorite = false;
+  List<_SubtitleCue> _subtitleCues = const [];
 
   @override
   void initState() {
     super.initState();
+    _player = Player();
+    _videoController = VideoController(_player);
     _init();
   }
 
   Future<void> _init() async {
     try {
-      final videoController = VideoPlayerController.networkUrl(
-        Uri.parse(PlaybackService.streamUrl(widget.mediaId)),
-        httpHeaders: {
-          if (apiClient.token?.isNotEmpty == true) 'Authorization': 'Bearer ${apiClient.token}',
-        },
+      final headers = {
+        if (apiClient.token?.isNotEmpty == true) 'Authorization': 'Bearer ${apiClient.token}',
+      };
+
+      await _player.open(
+        Media(
+          PlaybackService.streamUrl(widget.mediaId),
+          httpHeaders: headers,
+        ),
+        play: false,
       );
 
-      await videoController.initialize();
       final sec = await PlaybackService.getProgress(widget.mediaId);
       if (sec > 0) {
-        await videoController.seekTo(Duration(seconds: sec));
+        await _player.seek(Duration(seconds: sec));
       }
-      final favorite = await UserActionService.isFavorite(widget.mediaId);
 
+      final favorite = await UserActionService.isFavorite(widget.mediaId);
       final subtitles = await _loadSubtitles(_subtitleLang);
 
-      final chewieController = ChewieController(
-        videoPlayerController: videoController,
-        autoPlay: true,
-        allowFullScreen: false,
-        allowMuting: true,
-        allowPlaybackSpeedChanging: false,
-        subtitle: Subtitles(subtitles),
-        showSubtitles: true,
-        customControls: _NativeOverlayControls(
-          onSubtitlePressed: _showSubtitleMenu,
-          onAudioTrackPressed: _showAudioTrackMenu,
-          onFullscreenPressed: _openFullscreen,
-        ),
-      );
-
       _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
-        final pos = videoController.value.position.inSeconds;
+        final pos = _player.state.position.inSeconds;
         await PlaybackService.saveProgress(widget.mediaId, pos);
       });
 
+      await _player.play();
+
       if (!mounted) return;
       setState(() {
-        _videoController = videoController;
-        _chewieController = chewieController;
+        _subtitleCues = subtitles;
         _favorite = favorite;
         _loading = false;
       });
@@ -91,7 +85,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  Future<List<Subtitle>> _loadSubtitles(String lang) async {
+  Future<List<_SubtitleCue>> _loadSubtitles(String lang) async {
     try {
       final resp = await http.get(
         Uri.parse(PlaybackService.subtitleUrl(widget.mediaId, lang: lang, title: widget.title)),
@@ -109,10 +103,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  List<Subtitle> _parseSrt(String source) {
+  List<_SubtitleCue> _parseSrt(String source) {
     final text = source.replaceAll('\r\n', '\n');
     final blocks = text.split('\n\n');
-    final results = <Subtitle>[];
+    final results = <_SubtitleCue>[];
     for (final block in blocks) {
       final lines = block.split('\n').where((e) => e.trim().isNotEmpty).toList();
       if (lines.length < 2) continue;
@@ -124,7 +118,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final end = _parseSrtTime(parts[1].trim());
       if (start == null || end == null) continue;
       final content = lines.skipWhile((l) => !l.contains('-->')).skip(1).join('\n');
-      results.add(Subtitle(index: results.length, start: start, end: end, text: content));
+      results.add(_SubtitleCue(start: start, end: end, text: content));
     }
     return results;
   }
@@ -141,10 +135,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  List<Subtitle> _parseVtt(String source) {
+  List<_SubtitleCue> _parseVtt(String source) {
     final text = source.replaceAll('\r\n', '\n').replaceAll('WEBVTT', '').trim();
     final blocks = text.split('\n\n');
-    final results = <Subtitle>[];
+    final results = <_SubtitleCue>[];
     for (final block in blocks) {
       final lines = block.split('\n').where((e) => e.trim().isNotEmpty).toList();
       if (lines.isEmpty) continue;
@@ -156,7 +150,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final end = _parseVttTime(parts[1].trim().split(' ').first);
       if (start == null || end == null) continue;
       final content = lines.skipWhile((l) => !l.contains('-->')).skip(1).join('\n');
-      results.add(Subtitle(index: results.length, start: start, end: end, text: content));
+      results.add(_SubtitleCue(start: start, end: end, text: content));
     }
     return results;
   }
@@ -174,12 +168,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _switchSubtitle(String lang) async {
-    final cc = _chewieController;
-    if (cc == null) return;
     setState(() => _subtitleLang = lang);
     final subs = await _loadSubtitles(lang);
-    cc.setSubtitle(subs);
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() => _subtitleCues = subs);
   }
 
   Future<void> _showSubtitleMenu() async {
@@ -214,51 +206,32 @@ class _PlayerScreenState extends State<PlayerScreen> {
     await _switchSubtitle(lang);
   }
 
-  Future<void> _showAudioTrackMenu() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => const SafeArea(
-        child: ListTile(
-          leading: Icon(Icons.audiotrack),
-          title: Text('默认音轨'),
-          subtitle: Text('当前版本仅单音轨占位，后续可接后端多音轨接口'),
-        ),
-      ),
-    );
-  }
-
   Future<void> _jumpBySeconds(int seconds) async {
-    final vc = _videoController;
-    if (vc == null || !vc.value.isInitialized) return;
-    final current = vc.value.position;
+    final current = _player.state.position;
     final target = current + Duration(seconds: seconds);
-    final duration = vc.value.duration;
+    final duration = _player.state.duration;
     final clamped = target < Duration.zero ? Duration.zero : (target > duration ? duration : target);
-    await vc.seekTo(clamped);
+    await _player.seek(clamped);
   }
 
   void _togglePlayPause() {
-    final vc = _videoController;
-    if (vc == null) return;
-    vc.value.isPlaying ? vc.pause() : vc.play();
+    _player.state.playing ? _player.pause() : _player.play();
   }
 
   void _setLongPressFastForward(bool enable) {
-    final vc = _videoController;
-    if (vc == null) return;
     _isLongPressing = enable;
-    vc.setPlaybackSpeed(enable ? 3.0 : 1.0);
+    _player.setRate(enable ? 3.0 : 1.0);
     setState(() {});
   }
 
   void _openFullscreen() {
-    final vc = _videoController;
-    if (vc == null || !vc.value.isInitialized) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _FullscreenPlayerPage(
           title: widget.title,
-          controller: vc,
+          player: _player,
+          controller: _videoController,
+          subtitleCues: _subtitleCues,
           onJumpBySeconds: _jumpBySeconds,
           onTogglePlayPause: _togglePlayPause,
           onLongPressFastForward: _setLongPressFastForward,
@@ -359,128 +332,130 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    final pos = _videoController?.value.position.inSeconds ?? 0;
+    final pos = _player.state.position.inSeconds;
     PlaybackService.saveProgress(widget.mediaId, pos);
     _saveTimer?.cancel();
-    _chewieController?.dispose();
-    _videoController?.dispose();
+    _player.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final chewie = _chewieController;
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Text('播放失败：$_error'))
-              : chewie == null
-                  ? const Center(child: Text('播放器初始化失败'))
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        final topHeight = constraints.maxHeight / 3;
-                        final bottomHeight = constraints.maxHeight * 2 / 3;
-                        return Column(
-                          children: [
-                            SizedBox(
-                              height: topHeight,
-                              width: double.infinity,
-                              child: GestureDetector(
-                                onDoubleTap: _togglePlayPause,
-                                onLongPressStart: (_) => _setLongPressFastForward(true),
-                                onLongPressEnd: (_) => _setLongPressFastForward(false),
-                                onHorizontalDragEnd: (details) {
-                                  final vx = details.primaryVelocity ?? 0;
-                                  if (vx > 150) _jumpBySeconds(10);
-                                  if (vx < -150) _jumpBySeconds(-10);
-                                },
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    Chewie(controller: chewie),
-                                    if (_isLongPressing)
-                                      Positioned(
-                                        right: 12,
-                                        top: 12,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                          decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(10)),
-                                          child: const Text('3.0x 快进中', style: TextStyle(color: Colors.white)),
-                                        ),
-                                      ),
-                                  ],
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final topHeight = constraints.maxHeight / 3;
+                    final bottomHeight = constraints.maxHeight * 2 / 3;
+                    return Column(
+                      children: [
+                        SizedBox(
+                          height: topHeight,
+                          width: double.infinity,
+                          child: GestureDetector(
+                            onDoubleTap: _togglePlayPause,
+                            onLongPressStart: (_) => _setLongPressFastForward(true),
+                            onLongPressEnd: (_) => _setLongPressFastForward(false),
+                            onHorizontalDragEnd: (details) {
+                              final vx = details.primaryVelocity ?? 0;
+                              if (vx > 150) _jumpBySeconds(10);
+                              if (vx < -150) _jumpBySeconds(-10);
+                            },
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Video(controller: _videoController, controls: NoVideoControls),
+                                _SubtitleOverlay(player: _player, cues: _subtitleCues),
+                                _NativeOverlayControls(
+                                  player: _player,
+                                  onSubtitlePressed: _showSubtitleMenu,
+                                  onFullscreenPressed: _openFullscreen,
                                 ),
-                              ),
+                                if (_isLongPressing)
+                                  Positioned(
+                                    right: 12,
+                                    top: 12,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(10)),
+                                      child: const Text('3.0x 快进中', style: TextStyle(color: Colors.white)),
+                                    ),
+                                  ),
+                              ],
                             ),
-                            SizedBox(
-                              height: bottomHeight,
-                              child: SingleChildScrollView(
-                                padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                          ),
+                        ),
+                        SizedBox(
+                          height: bottomHeight,
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('简介', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '包含：进度、播放/暂停、音量、字幕、全屏。\n'
+                                  '交互：双击暂停/播放，长按3x，左右滑动±10秒。',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    height: 1.6,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                Row(
                                   children: [
-                                    Text('简介', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      '包含：进度、播放/暂停、音量、字幕、音轨、全屏。\n'
-                                      '交互：双击暂停/播放，长按3x，左右滑动±10秒。',
-                                      style: TextStyle(
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                        height: 1.6,
-                                        fontSize: 14,
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: _updatingFavorite ? null : _toggleFavorite,
+                                        icon: Icon(_favorite ? Icons.favorite : Icons.favorite_border),
+                                        label: Text(_favorite ? '已收藏' : '收藏'),
                                       ),
                                     ),
-                                    const SizedBox(height: 14),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: OutlinedButton.icon(
-                                            onPressed: _updatingFavorite ? null : _toggleFavorite,
-                                            icon: Icon(_favorite ? Icons.favorite : Icons.favorite_border),
-                                            label: Text(_favorite ? '已收藏' : '收藏'),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: OutlinedButton.icon(
-                                            onPressed: _showFeedbackDialog,
-                                            icon: const Icon(Icons.feedback_outlined),
-                                            label: const Text('反馈'),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: OutlinedButton.icon(
-                                            onPressed: _share,
-                                            icon: const Icon(Icons.share_outlined),
-                                            label: const Text('分享'),
-                                          ),
-                                        ),
-                                      ],
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: _showFeedbackDialog,
+                                        icon: const Icon(Icons.feedback_outlined),
+                                        label: const Text('反馈'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: _share,
+                                        icon: const Icon(Icons.share_outlined),
+                                        label: const Text('分享'),
+                                      ),
                                     ),
                                   ],
                                 ),
-                              ),
+                              ],
                             ),
-                          ],
-                        );
-                      },
-                    ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
     );
   }
 }
 
 class _NativeOverlayControls extends StatefulWidget {
   const _NativeOverlayControls({
+    required this.player,
     required this.onSubtitlePressed,
-    required this.onAudioTrackPressed,
     required this.onFullscreenPressed,
   });
 
+  final Player player;
   final VoidCallback onSubtitlePressed;
-  final VoidCallback onAudioTrackPressed;
   final VoidCallback onFullscreenPressed;
 
   @override
@@ -514,20 +489,17 @@ class _NativeOverlayControlsState extends State<_NativeOverlayControls> {
 
   @override
   Widget build(BuildContext context) {
-    final chewie = ChewieController.of(context);
-    final vc = chewie.videoPlayerController;
-
     return MouseRegion(
       onHover: (_) => _show(),
       onEnter: (_) => _show(),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: _show,
-        child: ValueListenableBuilder<VideoPlayerValue>(
-          valueListenable: vc,
-          builder: (context, value, _) {
-            final durationMs = value.duration.inMilliseconds.toDouble();
-            final positionMs = value.position.inMilliseconds.toDouble().clamp(0.0, durationMs <= 0 ? 1.0 : durationMs).toDouble();
+        child: _PlaybackBuilder(
+          player: widget.player,
+          builder: (data) {
+            final durationMs = data.duration.inMilliseconds.toDouble();
+            final positionMs = data.position.inMilliseconds.toDouble().clamp(0.0, durationMs <= 0 ? 1.0 : durationMs).toDouble();
             return Stack(
               children: [
                 AnimatedOpacity(
@@ -553,7 +525,7 @@ class _NativeOverlayControlsState extends State<_NativeOverlayControls> {
                               value: durationMs <= 0 ? 0 : positionMs,
                               min: 0,
                               max: durationMs <= 0 ? 1 : durationMs,
-                              onChanged: (v) => vc.seekTo(Duration(milliseconds: v.toInt())),
+                              onChanged: (v) => widget.player.seek(Duration(milliseconds: v.toInt())),
                             ),
                             LayoutBuilder(
                               builder: (context, box) {
@@ -565,15 +537,15 @@ class _NativeOverlayControlsState extends State<_NativeOverlayControls> {
                                 return Row(
                                   children: [
                                     IconButton(
-                                      onPressed: () => value.isPlaying ? vc.pause() : vc.play(),
-                                      icon: Icon(value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                                      onPressed: () => data.playing ? widget.player.pause() : widget.player.play(),
+                                      icon: Icon(data.playing ? Icons.pause : Icons.play_arrow, color: Colors.white),
                                       iconSize: iconSize,
                                       padding: EdgeInsets.all(iconPadding),
                                       constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                                     ),
                                     Expanded(
                                       child: Text(
-                                        '${_fmt(value.position)} / ${_fmt(value.duration)}',
+                                        '${_fmt(data.position)} / ${_fmt(data.duration)}',
                                         style: const TextStyle(color: Colors.white, fontSize: 12),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -584,10 +556,10 @@ class _NativeOverlayControlsState extends State<_NativeOverlayControls> {
                                     SizedBox(
                                       width: volumeWidth,
                                       child: Slider(
-                                        value: value.volume,
+                                        value: data.volume,
                                         min: 0,
-                                        max: 1,
-                                        onChanged: (v) => vc.setVolume(v),
+                                        max: 100,
+                                        onChanged: (v) => widget.player.setVolume(v),
                                       ),
                                     ),
                                     IconButton(
@@ -626,7 +598,9 @@ class _NativeOverlayControlsState extends State<_NativeOverlayControls> {
 class _FullscreenPlayerPage extends StatefulWidget {
   const _FullscreenPlayerPage({
     required this.title,
+    required this.player,
     required this.controller,
+    required this.subtitleCues,
     required this.onJumpBySeconds,
     required this.onTogglePlayPause,
     required this.onLongPressFastForward,
@@ -634,7 +608,9 @@ class _FullscreenPlayerPage extends StatefulWidget {
   });
 
   final String title;
-  final VideoPlayerController controller;
+  final Player player;
+  final VideoController controller;
+  final List<_SubtitleCue> subtitleCues;
   final Future<void> Function(int seconds) onJumpBySeconds;
   final VoidCallback onTogglePlayPause;
   final void Function(bool enable) onLongPressFastForward;
@@ -708,11 +684,12 @@ class _FullscreenPlayerPageState extends State<_FullscreenPlayerPage> {
                 if (vx > 150) widget.onJumpBySeconds(10);
                 if (vx < -150) widget.onJumpBySeconds(-10);
               },
-              child: Center(
-                child: AspectRatio(
-                  aspectRatio: widget.controller.value.aspectRatio,
-                  child: VideoPlayer(widget.controller),
-                ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Video(controller: widget.controller, controls: NoVideoControls),
+                  _SubtitleOverlay(player: widget.player, cues: widget.subtitleCues),
+                ],
               ),
             ),
           ),
@@ -749,14 +726,11 @@ class _FullscreenPlayerPageState extends State<_FullscreenPlayerPage> {
                     bottom: 2,
                     left: 8,
                     right: 8,
-                    child: ValueListenableBuilder<VideoPlayerValue>(
-                      valueListenable: widget.controller,
-                      builder: (context, value, _) {
-                        final durationMs = value.duration.inMilliseconds.toDouble();
-                        final positionMs = value.position.inMilliseconds
-                            .toDouble()
-                            .clamp(0.0, durationMs <= 0 ? 1.0 : durationMs)
-                            .toDouble();
+                    child: _PlaybackBuilder(
+                      player: widget.player,
+                      builder: (data) {
+                        final durationMs = data.duration.inMilliseconds.toDouble();
+                        final positionMs = data.position.inMilliseconds.toDouble().clamp(0.0, durationMs <= 0 ? 1.0 : durationMs).toDouble();
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)),
@@ -767,7 +741,7 @@ class _FullscreenPlayerPageState extends State<_FullscreenPlayerPage> {
                                 value: durationMs <= 0 ? 0 : positionMs,
                                 min: 0,
                                 max: durationMs <= 0 ? 1 : durationMs,
-                                onChanged: (v) => widget.controller.seekTo(Duration(milliseconds: v.toInt())),
+                                onChanged: (v) => widget.player.seek(Duration(milliseconds: v.toInt())),
                               ),
                               LayoutBuilder(
                                 builder: (context, box) {
@@ -779,15 +753,15 @@ class _FullscreenPlayerPageState extends State<_FullscreenPlayerPage> {
                                   return Row(
                                     children: [
                                       IconButton(
-                                        onPressed: () => value.isPlaying ? widget.controller.pause() : widget.controller.play(),
-                                        icon: Icon(value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                                        onPressed: () => data.playing ? widget.player.pause() : widget.player.play(),
+                                        icon: Icon(data.playing ? Icons.pause : Icons.play_arrow, color: Colors.white),
                                         iconSize: iconSize,
                                         padding: EdgeInsets.all(iconPadding),
                                         constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                                       ),
                                       Expanded(
                                         child: Text(
-                                          '${_fmt(value.position)} / ${_fmt(value.duration)}',
+                                          '${_fmt(data.position)} / ${_fmt(data.duration)}',
                                           style: const TextStyle(color: Colors.white, fontSize: 12),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -798,10 +772,10 @@ class _FullscreenPlayerPageState extends State<_FullscreenPlayerPage> {
                                       SizedBox(
                                         width: volumeWidth,
                                         child: Slider(
-                                          value: value.volume,
+                                          value: data.volume,
                                           min: 0,
-                                          max: 1,
-                                          onChanged: (v) => widget.controller.setVolume(v),
+                                          max: 100,
+                                          onChanged: (v) => widget.player.setVolume(v),
                                         ),
                                       ),
                                       IconButton(
@@ -836,4 +810,129 @@ class _FullscreenPlayerPageState extends State<_FullscreenPlayerPage> {
       ),
     );
   }
+}
+
+class _PlaybackData {
+  const _PlaybackData({
+    required this.position,
+    required this.duration,
+    required this.playing,
+    required this.volume,
+  });
+
+  final Duration position;
+  final Duration duration;
+  final bool playing;
+  final double volume;
+}
+
+class _PlaybackBuilder extends StatelessWidget {
+  const _PlaybackBuilder({required this.player, required this.builder});
+
+  final Player player;
+  final Widget Function(_PlaybackData data) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<Duration>(
+      stream: player.stream.position,
+      initialData: player.state.position,
+      builder: (context, posSnapshot) {
+        final position = posSnapshot.data ?? Duration.zero;
+        return StreamBuilder<Duration>(
+          stream: player.stream.duration,
+          initialData: player.state.duration,
+          builder: (context, durSnapshot) {
+            final duration = durSnapshot.data ?? Duration.zero;
+            return StreamBuilder<bool>(
+              stream: player.stream.playing,
+              initialData: player.state.playing,
+              builder: (context, playSnapshot) {
+                final playing = playSnapshot.data ?? false;
+                return StreamBuilder<double>(
+                  stream: player.stream.volume,
+                  initialData: player.state.volume,
+                  builder: (context, volSnapshot) {
+                    final volume = (volSnapshot.data ?? 100).clamp(0, 100).toDouble();
+                    return builder(
+                      _PlaybackData(
+                        position: position,
+                        duration: duration,
+                        playing: playing,
+                        volume: volume,
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _SubtitleOverlay extends StatelessWidget {
+  const _SubtitleOverlay({required this.player, required this.cues});
+
+  final Player player;
+  final List<_SubtitleCue> cues;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 20, right: 20, bottom: 46),
+          child: StreamBuilder<Duration>(
+            stream: player.stream.position,
+            initialData: player.state.position,
+            builder: (context, snapshot) {
+              final now = snapshot.data ?? Duration.zero;
+              final text = _findSubtitle(now, cues);
+              if (text == null || text.isEmpty) return const SizedBox.shrink();
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    height: 1.35,
+                    shadows: [
+                      Shadow(offset: Offset(0, 1), blurRadius: 2, color: Colors.black),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  String? _findSubtitle(Duration position, List<_SubtitleCue> cues) {
+    for (final cue in cues) {
+      if (position >= cue.start && position <= cue.end) {
+        return cue.text;
+      }
+    }
+    return null;
+  }
+}
+
+class _SubtitleCue {
+  const _SubtitleCue({required this.start, required this.end, required this.text});
+
+  final Duration start;
+  final Duration end;
+  final String text;
 }

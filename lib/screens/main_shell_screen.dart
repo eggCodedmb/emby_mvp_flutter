@@ -42,21 +42,21 @@ class MainShellScreen extends StatelessWidget {
                     ),
                   ),
                   Expanded(
-                    child: _NavItem(
-                      label: '我的',
-                      selected: currentIndex == 1,
-                      normalAsset: 'assets/NavigationBar/nav_profile.png',
-                      activeAsset: 'assets/NavigationBar/nav_profile_active.png',
-                      onTap: () => context.go('/me'),
-                    ),
-                  ),
-                  Expanded(
                     child: _NavIconItem(
                       label: '漫画',
                       selected: currentIndex == 2,
                       icon: Icons.auto_stories_outlined,
                       selectedIcon: Icons.auto_stories,
                       onTap: () => context.go('/comics'),
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavItem(
+                      label: '我的',
+                      selected: currentIndex == 1,
+                      normalAsset: 'assets/NavigationBar/nav_profile.png',
+                      activeAsset: 'assets/NavigationBar/nav_profile_active.png',
+                      onTap: () => context.go('/me'),
                     ),
                   ),
                 ],
